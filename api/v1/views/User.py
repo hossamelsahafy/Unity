@@ -1,6 +1,7 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, url_for
 from Create import Users
-from Create import add_user, edit_user_name, session, edit_user_email
+from sqlalchemy.orm import aliased
+from Create import add_user, edit_user_name, session, edit_user_email, Images, session
 from werkzeug.security import generate_password_hash
 
 User_app_views = Blueprint('User_app_views', __name__)
@@ -27,10 +28,14 @@ def UpdateUserName(userID):
 def GetUser(userID):
     User = session.query(Users).filter_by(userID=userID).first()
     if User:
+        avatar_image = aliased(Images)
+        image = session.query(avatar_image).filter_by(image_id=User.avatar_image_id).first()
+        avatar_image_url = image.image_url if image else url_for('static', filename='image/images.png')
         return jsonify({"FirstName": User.FirstName,
                         "LastName": User.LastName,
                         "Gender": User.Gender,
-                        "Email": User.Email}), 200
+                        "Email": User.Email,
+                        "AvatarImageUrl": avatar_image_url}), 200
     else:
         return jsonify({"message": "User Not Found"}), 404
 

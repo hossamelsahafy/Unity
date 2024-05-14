@@ -2,8 +2,9 @@
 import os
 from sqlalchemy import create_engine, exc
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import declarative_base, aliased
 from sqlalchemy import Column, Enum, ForeignKey, Date, TIMESTAMP, LargeBinary
+from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.mysql import VARCHAR, CHAR
 from sqlalchemy import String
 import uuid
@@ -31,6 +32,10 @@ class Users(Base):
     PasswordHash = Column("PasswordHash", VARCHAR(256))
     Birthday = Column("Birthday", Date)
     avatar_image_id = Column("avatar_image_id", CHAR(36), ForeignKey('images.image_id'), nullable=True)
+    avatar_image_url = Column("avatar_image_url", VARCHAR(255), nullable=True)
+    posts = relationship('Posts', back_populates='user')
+    stories = relationship('Stories', back_populates='user')
+    
 
     def set_password(self, password):
         self.PasswordHash = generate_password_hash(password)
@@ -38,7 +43,7 @@ class Users(Base):
     def check_password(self, password):
         return check_password_hash(self.PasswordHash, password)
 
-    def __init__(self, FirstName, LastName, Gender, ProfileName, Email, Password, Birthday, avatar_image_id):
+    def __init__(self, FirstName, LastName, Gender, ProfileName, Email, Password, Birthday, avatar_image_id, avatar_image_url=None):
         self.FirstName = FirstName
         self.LastName = LastName
         self.Gender = Gender
@@ -47,19 +52,24 @@ class Users(Base):
         self.set_password(Password)
         self.Birthday = Birthday
         self.avatar_image_id = avatar_image_id
+        self.avatar_image_url = avatar_image_url
 
+    
 
 class Posts(Base):
     __tablename__ = "posts"
     PostID = Column("PostID", CHAR(36), primary_key=True, default=generate_uuid)
-    UserID = Column("UserID", CHAR(36), ForeignKey('users.userID'))  # Corrected
+    UserID = Column("UserID", CHAR(36), ForeignKey('users.userID'))
     PostContent = Column("PostContent", VARCHAR(1024))
-    image = Column("image", VARCHAR(255), nullable=True)
+    ImageID = Column("ImageID", CHAR(36), ForeignKey('images.image_id'), nullable=True)  # Assuming 'images' table has 'image_id' column
+    Image_URL = Column("Image_URL", VARCHAR(255), nullable=True)
+    user = relationship('Users', back_populates='posts')
 
-    def __init__(self, UserID, PostContent):
+    def __init__(self, UserID, PostContent, ImageID=None, Image_URL=None):
         self.UserID = UserID
         self.PostContent = PostContent
-
+        self.ImageID = ImageID
+        self.Image_URL = Image_URL
 
 class Likes(Base):
     __tablename__ = "likes"
@@ -136,6 +146,7 @@ class Stories(Base):
     UserID = Column("UserID", CHAR(36), ForeignKey('users.userID'))
     StoryContent = Column("StoryContent", VARCHAR(1024))
     ImagePath = Column("ImagePath", VARCHAR(255), nullable=True)
+    user = relationship('Users', back_populates='stories')
 
     def __init__(self, UserID, StoryContent, ImagePath=None):
         self.UserID = UserID

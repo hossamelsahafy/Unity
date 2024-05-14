@@ -29,8 +29,8 @@
                 </script>
             </div>
             <div class="profilePic">
-                {% if avatar_image_url %}
-                    <img src="{{ avatar_image_url }}" id="pic">
+                {% if user.avatar_image_url %}
+                    <img src="{{ user.avatar_image_url }}" id="pic">
                 {% else %}
                     <!-- Make sure the path here matches the location of your default image -->
                     <img src="{{ url_for('static', filename='image/images.png') }}" id="pic">
@@ -47,7 +47,12 @@
             <div class="Left">
                 <a class="profile">
                     <div class="profilePic">
-                        <img src="{{ avatar_image_url }}">
+                        {% if user.avatar_image_url %}
+                        <img src="{{ user.avatar_image_url }}" id="pic">
+                    {% else %}
+                        <!-- Make sure the path here matches the location of your default image -->
+                        <img src="{{ url_for('static', filename='image/images.png') }}" id="pic">
+                    {% endif %}
                     </div>
                     <div class="handle">
                         <h4>{{ user.FirstName }} {{ user.LastName }}</h4>
@@ -121,7 +126,6 @@
                         <!-- Submit button for the form -->
                         <button class="button button-pri" type="button" onclick="submitStoryForm()">Submit</button>
                     </form>
-                    
                 </div>
                 <script>
                     // Parse the stories data from the hidden input
@@ -147,13 +151,13 @@
                             if (stories_data[i].visible !== false) { // Check if the story is not hidden
                                 const storyDiv = document.createElement('div');
                                 storyDiv.className = 'Story';
-                                const imageUrl = stories_data[i].image_url || 'defaultImageUrl'; // Replace with your default image URL
+                                const imageUrl = stories_data[i].image_url;
                                 storyDiv.style.background = `url('${imageUrl}') no-repeat center center/cover`;
                         
                                 const profilePicDiv = document.createElement('div');
                                 profilePicDiv.className = 'profilePic';
                                 const img = document.createElement('img');
-                                img.src = "{{ avatar_image_url }}"; // Assuming avatar_image_url is part of stories_data
+                                img.src = stories_data[i].avatar_image_url; // Set the src attribute of the img tag to the user's avatar_image_url
                                 profilePicDiv.appendChild(img);
                                 storyDiv.appendChild(profilePicDiv);
                         
@@ -249,88 +253,63 @@
                     
                 
         <!-- Form for creating a post -->
-<form class="CreatePost" enctype="multipart/form-data" method="post" action="/submit_post" onsubmit="return submitPostForm();">
-    <div class="profilePic">
-        <img src="{{ image_url }}">
-    </div>
+        <!-- Form for creating a post -->
+<form class="CreatePost" enctype="multipart/form-data" method="post" id="post-form" onsubmit="return submitPostForm();">
+    
     <div class="button-container">
-        <!-- Button to show the post card -->
-        <button type="button" class="Post-button button button-pri" id="Post-button" onclick="showPostCard()">Post</button>
+        <input id="post-content" name="post_content" placeholder="What's on your mind?" style="float: left; margin-right: 250px;">
+        <span><i class="uil uil-image" onclick="document.getElementById('file-input-post').click()" style="cursor: pointer;"></i></span>
+        <button type="submit" class="Post-button button button-pri" id="Post-button">Post</button>
     </div>
-    <!-- Hidden card for adding a new post -->
-    <div class="Card" id="new-post-card" style="display: none;">
-        <!-- Textarea for post content -->
-        <textarea id="post-content" placeholder="Write something here..." style="height: 7em; width: 100%;"></textarea>
-
-        <!-- Drop zone for image upload -->
-        <div id="drop-zone" style="width: 450px; height: 225px; border: 2px dashed #ccc; line-height: 225px; text-align: center; margin: 5px auto;">
-            Drag & drop your image here
-        </div>
-
-        <!-- File input for image upload -->
-        <input type="file" id="file-input" name="image_file" accept="image/*" style="display: none;">
-        <button type="button" class="button button-pri" onclick="document.getElementById('file-input').click()">Browse</button>
-
-        <!-- Submit button for the form -->
-        <button type="submit" class="button button-pri">Submit</button>
-    </div>
+    <!-- File input for image upload -->
+    <input type="file" id="file-input-post" accept="image/*" style="display: none;">
 </form>
 
-<script>
-// JavaScript function to show the post card
-function showPostCard() {
-    var card = document.getElementById('new-post-card');
-    card.style.display = 'block';
-}
-
-// JavaScript function to handle the post submission
-function submitPostForm() {
-    // Add your logic for form submission here
-    // ...
-    return true; // Return false to prevent the form from submitting if there are errors
-}
-</script>
-
-            <div class="Posts">
-            <div class="Post">
-                <div class="Head">
-                    <div class="User">
-                        <div class="profilePic">
-                            <img src="{{ avatar_image_url }}">
-                        </div>
-                        <div class="userinfo">
-                            <div class="ing">
-                                <h3>{{  user.ProfileName  }}</h3>
-                            </div>
-                        </div>
-                    </div>
-                    <span class="Edit">
-                        <i class="uil uil-ellipsis-h"></i>
-                    </span>
+<div class="Posts">
+    {% for post in posts_data %}
+    <div class="Post">
+        <div class="Head">
+            <div class="User">
+                <div class="profilePic">
+                    {% if post.user.avatar_image_url %}
+                        <img src="{{ post.user.avatar_image_url }}" id="pic">
+                    {% else %}
+                        <!-- Make sure the path here matches the location of your default image -->
+                        <img src="{{ url_for('static', filename='image/images.png') }}" id="pic">
+                    {% endif %}
                 </div>
-                <div class="PostImage">
-                    <img src="./images/369526677_2527570767419676_1453225281164553236_n.jpg">
-                </div>
-                
-                <div class="ActButtons">
-                    <div class="InteractionButtons">
-                        <span><i class="uil uil-heart"></i></span>
-                        <span><i class="uil uil-comment"></i></span>
+                <div class="userinfo">
+                    <div class="ing">
+                        <h3>{{ post.user.ProfileName }}</h3>
                     </div>
                 </div>
-                <div class="Liked_By">
-                    <span><img src="./images/369526677_2527570767419676_1453225281164553236_n.jpg"></span>
-                    <span><img src="./images/369526677_2527570767419676_1453225281164553236_n.jpg"></span>
-                    <span><img src="./images/369526677_2527570767419676_1453225281164553236_n.jpg"></span>
-                    <p> Liked By <b>UserName </b> and <b>UserName</b></p>
-                </div>
-                <div class="caption">
-                    <p><b>LeoMissie</b> Lorem ipsum dolor sit amet consectetur adipisicing elit. Magni illum iste facilis earum consequatur quibusdam in doloribus iusto sapiente. Soluta laudantium quod eveniet ullam quam odio repudiandae, labore unde voluptate?</p>
-                </div>
-                <div class="Comments text-muted"></div>
-                    </div>
+            </div>
+            <span class="Edit">
+                <i class="uil uil-ellipsis-h"></i>
+            </span>
+        </div>
+        {% if post.content %}
+        <div class="caption">
+            <p>{{ post.content }}</p>
+        </div>
+        {% if post.image_url %}
+        <div class="PostImage">
+            <img src="{{ post.image_url }}">
+        </div>
+        {% endif %}
+        
+        <div class="ActButtons">
+            <div class="InteractionButtons">
+                <span><i class="uil uil-heart"></i></span>
+                <span><i class="uil uil-comment"></i></span>
             </div>
         </div>
+        
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+            </div>
         <div class="Right">
             <div class="Messages" id="MessagesHightlight">
                 <div class="Heading">
@@ -524,9 +503,11 @@ function submitPostForm() {
     var userID = '{{ user.userID }}';
 {% for story in stories_data %}
     var storyID = '{{ story.id }}';
-    console.log(storyID);
 {% endfor %}
-
+{% for post in posts_data %}
+    var postID = '{{ post.id }}';
+    console.log(postID);
+{% endfor %}
 </script>
     <script src="/static/script/home.js"></script>
     <script src="/static/script/pic.js"></script>

@@ -62,14 +62,9 @@ def submit_post():
         return jsonify({'error': 'User not authenticated'}), 401
 
     post_content = request.form.get('post_content')
-    image_file = request.files.get('image_file', None)  # Default to None if not provided
-
-    # Check if required data is present
-    if not post_content:
-        return jsonify({'error': 'Post content is missing'}), 400
-
-    # Initialize image_path as None
-    image_path = None
+    image_file = request.files.get('image_file', None)
+    image_id = None
+    image_url = None
 
     # If an image file is provided and it's allowed
     if image_file and allowed_file(image_file.filename):
@@ -93,20 +88,26 @@ def submit_post():
             db_session.add(new_image)
             db_session.commit()
             
-            # Use the ImageID of the new image
-            image_id = new_image.image_id
+            image_url = new_image.image_url
         except Exception as e:
+            db_session.rollback()  # Rollback in case of error
             return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
+        
+    # Check if either post content or image is provided
+    if not post_content and not image_url:
+        return jsonify({'error': 'Post must have either content or an image'}), 400
 
     try:
-        # Create a new post with or without an ImageID
-        new_post = Posts(UserID=session['user_id'], PostContent=post_content, ImageID=image_id if image_path else None)
+        # Create a new post with or without an image
+        new_post = Posts(UserID=session['user_id'], PostContent=post_content, Image_URL=image_url)  # Use correct column names
         db_session.add(new_post)
         db_session.commit()
-        
+    
         return jsonify({'message': 'Post submitted successfully', 'post_id': new_post.PostID}), 200
     except Exception as e:
+        db_session.rollback()  # Rollback in case of error
         return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
+
 
 
 @app.route('/upload_image', methods=['POST'])
@@ -378,22 +379,40 @@ def upload_avatar():
     if not image_file:
         return jsonify({'error': 'Image file missing'}), 400
 
-    # ...same checks as before...
+    # Check if the file is allowed
+    if not allowed_file(image_file.filename):
+        return jsonify({'error': 'File type not allowed. Please upload a file with one of the following extensions: png, jpg, jpeg, gif'}), 400
+
+    # Check the file size
+    max_file_size = 1024 * 1024 * 5  # 5 MB
+    if image_file.content_length > max_file_size:
+        return jsonify({'error': 'File size exceeds the limit of 5 MB. Please upload a smaller file.'}), 400
 
     try:
-        image_path = save_image_file(image_file)
+        # Save the image file and get the path
+        filename = secure_filename(image_file.filename)
+        image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        image_file.save(image_path)
+        
+        # Create a new image record in the database
         new_image = Images(user_id=session['user_id'], image_path=image_path)
         db_session.add(new_image)
         db_session.commit()
 
+        # Calculate the image URL without the UUID subdirectory
+        image_url = url_for('static', filename='uploaded_images/' + filename)
+        new_image.image_url = image_url
+        db_session.commit()
+        
+        # Update the user's record with the new avatar image ID
         user = db_session.query(Users).filter_by(userID=session['user_id']).first()
         user.avatar_image_id = new_image.image_id
+        user.avatar_image_url = new_image.image_url  # Update the avatar_image_url
         db_session.commit()
 
-        return jsonify({'message': 'Avatar image uploaded successfully'}), 200
+        return jsonify({'message': 'Avatar image uploaded successfully', 'image_url': image_url}), 200
     except Exception as e:
         return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
-
 
 @app.route('/change_avatar', methods=['POST'])
 def change_avatar():
@@ -434,10 +453,18 @@ def change_avatar():
         # Update the user's record with the new avatar image ID
         user = db_session.query(Users).filter_by(userID=session['user_id']).first()
         user.avatar_image_id = new_image.image_id
+        user.avatar_image_url = new_image.image_url  # Update the avatar_image_url
         db_session.commit()
 
-        # Update the session with the new avatar image URL
-        session['avatar_image_url'] = image_url
+        # Update the avatar image URL for stories and posts if applicable
+        stories = db_session.query(Story).filter_by(user_id=session['user_id']).all()
+        for story in stories:
+            story.user.avatar_image_url = image_url
+            db_session.commit()
+        posts = db_session.query(Posts).filter_by(user_id=session['user_id']).all()  # Changed from Posts to Post
+        for post in posts:
+            post.user.avatar_image_url = image_url
+            db_session.commit()
         
         return jsonify({'message': 'Avatar image changed successfully', 'image_url': image_url}), 200
     except Exception as e:
@@ -450,25 +477,34 @@ def update_avatar_image_url():
     user_id = data.get('user_id')
     avatar_image_url = data.get('avatar_image_url')
 
-    # Get the image record with the given URL
-    avatar_image = db_session.query(Images).filter_by(image_url=avatar_image_url).first()
-    if not avatar_image:
-        return 'Image not found', 404
-
-    # Update the user's avatar image ID in the database
+    # Get the user record from the database
     user = db_session.query(Users).filter_by(userID=user_id).first()
-    if user:
-        user.avatar_image_id = avatar_image.image_id
-        db_session.commit()
-        return 'Avatar image ID updated successfully', 200
-    else:
+    if not user:
         return 'User not found', 404
 
+    # Update the user's avatar image URL
+    user.avatar_image_url = avatar_image_url
+    db_session.commit()
 
-@app.route('/<profile_name>/home')
+    return 'Avatar image URL updated successfully', 200
+
+
+
+def get_avatar_image_url(user):
+    # Check if the user has an avatar image ID
+    if user.avatar_image_id:
+        # Retrieve the avatar image record from the database
+        avatar_image = db_session.query(Images).filter_by(image_id=user.avatar_image_id).first()
+        if avatar_image:
+            # Return the URL of the avatar image
+            return avatar_image.image_url
+    # If the user doesn't have an avatar image or the image couldn't be retrieved, return a default image URL
+    return url_for('static', filename='default_avatar.png')  # Replace 'default_avatar.png' with your default avatar image path
+
+
+@app.route('/<profile_name>/home', methods=['GET', 'POST'])
 def home(profile_name):
     # Check if user is logged in
-    current_page = 0
     if 'user_id' not in session:
         flash('Please log in to view this page')
         return redirect(url_for('login'))
@@ -483,23 +519,51 @@ def home(profile_name):
     if not user:
         flash('User not found')
         return redirect(url_for('login'))
-    story = db_session.query(Stories).first()
-    # Get the user's avatar image URL or use a default one
-    avatar_image_url = url_for('static', filename='image/images.png')  # Default avatar image
-    if user.avatar_image_id:
-        avatar_image = db_session.query(Images).filter_by(image_id=user.avatar_image_id).first()
-        if avatar_image:
-            avatar_image_url = avatar_image.image_url
-    # Get all stories and their images for the user
-    stories_with_images = db_session.query(Stories, Images.image_url).outerjoin(Images, Stories.ImagePath == Images.image_id).filter(Stories.UserID == user.userID).all()
-    posts = db_session.query(Posts).all()
-    # Construct a list of dictionaries with story content and image URLs
-    stories_data = [{'id': story.StoryID, 'content': story.StoryContent, 'image_url': image_url if image_url else avatar_image_url} for story, image_url in stories_with_images]
 
+    # Get the user's avatar image URL
+    avatar_image_url = get_avatar_image_url(user)
+    # Fetch stories and their images for the user
+    stories_with_images = db_session.query(Stories, Images.image_url, Users.avatar_image_url)\
+    .outerjoin(Images, Stories.ImagePath == Images.image_id)\
+    .join(Users, Stories.UserID == Users.userID)\
+    .all()
+
+    # Construct a list of dictionaries with story content and image URLs
+    stories_data = [{'id': story.StoryID, 'content': story.StoryContent, 
+                     'image_url': image_url if image_url else avatar_image_url,
+                     'avatar_image_url': avatar_image_url}  # Add this line
+                    for story, image_url, avatar_image_url in stories_with_images]
+
+    # Get total number of stories for pagination
     total_stories_count = db_session.query(Stories).filter(Stories.UserID == user.userID).count()
-    # Render the home page template with the user's information
-    total_pages = (total_stories_count + 4) // 5
-    return render_template('HomePage.html', user=user, avatar_image_url=avatar_image_url, stories_data=stories_data, current_page=current_page, total_pages=total_pages, story=story, posts=posts)
+    total_pages = (total_stories_count + 4) // 5  # Assuming 5 stories per page
+    # Fetch posts for the user
+    # Fetch posts and user information from the database
+    user_posts = db_session.query(
+    Posts.PostID,
+    Posts.UserID,
+    Posts.PostContent,
+    Posts.ImageID,
+    Posts.Image_URL,  # Make sure this matches the attribute name in the class definition
+    Users.ProfileName,
+    Users.avatar_image_url
+).join(Users, Posts.UserID == Users.userID).order_by(Posts.PostID.desc()).all()
+
+
+
+    # Construct a list of dictionaries with post details and user information
+    posts_data = [{'id': post_id,
+               'content': post_content,
+               'image_url': image_url,
+               'user': {'ProfileName': profile_name, 'avatar_image_url': avatar_image_url}}
+              for post_id, user_id, post_content, image_id, image_url, profile_name, avatar_image_url in user_posts]
+
+
+    # Fetch posts for the user
+    posts = db_session.query(Posts).join(Users).order_by(Posts.PostID.desc()).all()
+
+    return render_template('HomePage.html', user=user, avatar_image_url=avatar_image_url, 
+                           posts_data=posts_data, stories_data=stories_data, total_pages=total_pages, posts=posts)
 
 
 if __name__ == '__main__':

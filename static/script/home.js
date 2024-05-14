@@ -422,43 +422,38 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     });
 
-    // Get the file input element
-// Function to handle submission of story form
-function submitStoryForm() {
-    let storyContent = document.getElementById('story-content').value;
-    let imageFile = document.getElementById('file-input').files[0];
-
-    let formData = new FormData();
-    formData.append('story_content', storyContent);
-    if (imageFile) {
-        formData.append('image_file', imageFile);
-    }
-
-    for (let [key, value] of formData.entries()) {
-        console.log(key, value);
-    }
-
-    fetch('/submit_story', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            console.error('Error uploading story:', data.error);
-            document.getElementById('form-feedback').textContent = 'Error: ' + data.error;
-        } else {
-            console.log('Story uploaded successfully', data);
-            document.getElementById('form-feedback').textContent = 'Story uploaded successfully!';
-            document.getElementById('story-content').value = '';
-            document.getElementById('file-input').value = '';
-            console.log('Attempting to reload the page...');
-            window.location.reload(true);
+    function submitPostForm() {
+        let postContent = document.getElementById('post-content').value;
+        let imageFile = document.getElementById('file-input-post').files[0];
+        let formData = new FormData();
+        formData.append('post_content', postContent); // This line was missing
+    
+        if (imageFile) {
+            formData.append('image_file', imageFile);
         }
-    })
-    .catch(error => {
-        console.error('Error uploading story:', error);
-        document.getElementById('form-feedback').textContent = 'Error: ' + error.message;
-    });
-}
-
+    
+        let feedbackElement = document.getElementById('form-feedback'); // Ensure this element exists
+    
+        fetch('/submit_post', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                console.error('Error uploading post:', data.error);
+                feedbackElement.textContent = 'Error: ' + data.error;
+            } else {
+                console.log('Post uploaded successfully', data);
+                feedbackElement.textContent = 'Post uploaded successfully!';
+                document.getElementById('post-content').value = '';
+                document.getElementById('file-input-post').value = '';
+                window.location.reload(true);
+            }
+        })
+        .catch(error => {
+            console.error('Error uploading post:', error);
+            feedbackElement.textContent = 'Error: ' + error.message;
+        });
+    }
+    
