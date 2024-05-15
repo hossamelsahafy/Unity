@@ -3,7 +3,7 @@ from flask import Flask, request, jsonify, session, redirect, url_for, render_te
 from api.v1.views import *
 from Create import add_user, check_password_hash, Users, Posts, Comments, Follows, Likes, Notifications, session as db_session, Stories
 import os
-from Create import db, Session, Images, edit_user_email, edit_user_name, edit_user_info, is_authorized_to_delete_story
+from Create import db, Session, Images, edit_user_email, edit_user_name, edit_user_info
 from werkzeug.utils import secure_filename
 import os
 from sqlalchemy.orm import scoped_session, sessionmaker
@@ -68,8 +68,8 @@ def submit_post():
     image_file = request.files.get('image_file', None)  # Image is optional
 
     # Check if post content is present
-    if not post_content:
-        return jsonify({'error': 'Post content cannot be empty'}), 400
+    if not post_content and not image_file:
+        return jsonify({'error': 'Post content and image cannot both be empty'}), 400
 
     image_path = None
 
@@ -90,23 +90,26 @@ def submit_post():
             image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             image_file.save(image_path)
             print(f"Image saved at {image_path}")
+
+            # Save only the relative path in the database
+            relative_image_path = os.path.join('uploaded_images', filename)
         except Exception as e:
             print(f"Error saving image: {e}")
             return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
 
     try:
         # Create a new post with or without an image
-        new_post = Posts(UserID=session['user_id'], PostContent=post_content, ImagePath=image_path)
+        new_post = Posts(UserID=session['user_id'], PostContent=post_content if post_content else None, ImagePath=relative_image_path if image_file else None)
         db_session.add(new_post)
         db_session.commit()
         print(f"New post: {new_post}")  # Print out the new post
 
-    
         return jsonify({'message': 'Post submitted successfully', 'post_id': new_post.PostID}), 200
     except Exception as e:
         print(f"Error creating post: {e}")  # Print out any 
         app.logger.error(f'An unexpected error occurred: {str(e)}')
         return jsonify({'error': 'An unexpected error occurred'}), 500
+
 
 
 @app.route('/upload_image', methods=['POST'])
@@ -127,6 +130,17 @@ def is_filename_safe(filename):
     # This regular expression checks for any character that is not a letter, number, underscore, or hyphen
     safe_pattern = re.compile('[^a-zA-Z0-9._-]')
     return not bool(safe_pattern.search(filename))
+
+
+@app.route('/api/get-stories', methods=['GET'])
+def get_stories():
+    try:
+        stories = db_session.query(Stories).all()
+        return jsonify([story.to_dict() for story in stories]), 200
+    except Exception as e:
+        # Handle any unexpected exceptions
+        print(f"Error: {str(e)}")  # Print the error message
+        return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
 
 
 @app.route('/submit_story', methods=['POST'])
@@ -174,6 +188,24 @@ def submit_story():
         return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
 
 
+def delete_story_from_db(story_id):
+    story_to_delete = db_session.query(Stories).filter(Stories.StoryID == story_id).one()
+    db_session.delete(story_to_delete)
+    db_session.commit()
+    print("Story Deleted")
+
+def is_authorized_to_delete_story(user_id, story_id):
+    try:
+        session = Session()
+        story = session.query(Stories).filter_by(UserID=user_id, StoryID=story_id).first()
+        if story and story.UserID == user_id:
+            print(user_id, story_id)  # Debugging print statement
+            return True
+        return False
+    finally:
+        session.close()
+
+
 @app.route('/stories/<story_id>', methods=['DELETE'])
 def delete_story(story_id):
     # Check if the user is authenticated
@@ -182,25 +214,16 @@ def delete_story(story_id):
     
     # Get the user ID from the session
     user_id = session['user_id']
-    
-    
     if not is_authorized_to_delete_story(user_id, story_id):
-         return jsonify({'error': 'User not authorized to delete this story'}), 403
-
+        return jsonify({'error': 'User not authorized to delete this story'}), 403
     try:
         # Perform the deletion operation
-       story = db_session.query(Stories).filter_by(UserID=user_id, StoryID=story_id).first()
-       if story:
-            db_session.delete(story)
-            db_session.commit()
-
-            return jsonify({'message': 'Story deleted successfully'}), 200
-       else:
-           return jsonify({'error': 'Story not found'}), 404
+        delete_story_from_db(story_id)
+        return jsonify({'message': 'Story deleted successfully'}), 200
     except Exception as e:
         # Handle any unexpected exceptions
+        print(f"Error: {str(e)}")  # Print the error message
         return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
-
 
 
 @app.route('/upload', methods=['POST'])
@@ -501,7 +524,7 @@ def get_avatar_image_url(user):
     return url_for('static', filename='default_avatar.png')  # Replace 'default_avatar.png' with your default avatar image path
 
 
-@app.route('/<profile_name>/home', methods=['GET', 'POST'])
+@app.route('/<profile_name>/home', methods=['GET', 'POST', 'DELETE'])
 def home(profile_name):
     # Check if user is logged in
     if 'user_id' not in session:
@@ -535,29 +558,31 @@ def home(profile_name):
     
     # Get total number of stories for pagination
     total_stories_count = db_session.query(Stories).filter(Stories.UserID == user.userID).count()
-    total_pages = (total_stories_count + 4) // 5  # Assuming 5 stories per page
+    total_pages = (total_stories_count + 4) // 5  # Assuming 5 stories per page # Assuming 5 stories per page
     # Fetch posts and their images for the user
     posts_with_images = db_session.query(
-    Posts.PostID,
-    Posts.UserID,
-    Posts.PostContent,
-    Posts.ImagePath,  # Use the ImagePath from the Posts table
-    Users.ProfileName,
-    Users.avatar_image_url
-).join(Users, Posts.UserID == Users.userID)\
-.order_by(Posts.PostID.desc()).all()
+        Posts.PostID,
+        Posts.UserID,
+        Posts.PostContent,
+        Posts.ImagePath,  # Use the ImagePath from the Posts table
+        Users.ProfileName,
+        Users.avatar_image_url
+    ).join(Users, Posts.UserID == Users.userID)\
+    .order_by(Posts.PostID.desc()).all()
 
 # Construct a list of dictionaries with post details and user information
     posts_data = [{'id': post_id,
     'content': post_content,
-    'image_url': url_for('static', filename=image_path.replace('static/', '')) if image_path else avatar_image_url,  # Generate the image URL using ImagePath
+    'image_url': url_for('static', filename=image_path.replace('static/', '')) if image_path else None,  # Generate the image URL using ImagePath
     'user': {'ProfileName': profile_name, 'avatar_image_url': avatar_image_url}}
     for post_id, user_id, post_content, image_path, profile_name, avatar_image_url in posts_with_images]
-    # Fetch posts for the user
+
     posts = db_session.query(Posts).join(Users).order_by(Posts.PostID.desc()).all()
 
     return render_template('HomePage.html', user=user, avatar_image_url=avatar_image_url, 
                        posts_data=posts_data, stories_data=stories_data, total_pages=total_pages, posts=posts)
 
+
 if __name__ == '__main__':
     app.run(debug=True)
+

@@ -426,6 +426,13 @@ document.addEventListener("DOMContentLoaded", function() {
         let postContent = document.getElementById('post-content').value;
         let imageFile = document.getElementById('file-input-post').files[0];
         let formData = new FormData();
+    
+        // Check if post content or image is present
+        if (!postContent && !imageFile) {
+            alert("Please enter post content or upload an image.");
+            return false;  // Prevent the form from being submitted
+        }
+    
         formData.append('post_content', postContent); // This line was missing
     
         if (imageFile) {
@@ -436,7 +443,8 @@ document.addEventListener("DOMContentLoaded", function() {
     
         fetch('/submit_post', {
             method: 'POST',
-            body: formData
+            body: formData,
+            redirect: 'follow'
         })
         .then(response => response.json())
         .then(data => {
@@ -448,6 +456,8 @@ document.addEventListener("DOMContentLoaded", function() {
                 feedbackElement.textContent = 'Post uploaded successfully!';
                 document.getElementById('post-content').value = '';
                 document.getElementById('file-input-post').value = '';
+    
+                // Force refresh the page
                 window.location.reload(true);
             }
         })
@@ -455,7 +465,9 @@ document.addEventListener("DOMContentLoaded", function() {
             console.error('Error uploading post:', error);
             feedbackElement.textContent = 'Error: ' + error.message;
         });
-    }
+    
+        return false;  // Prevent the form from being submitted 
+    }   
     function submitStoryForm() {
         let storyContent = document.getElementById('story-content').value;
         let imageFile = document.getElementById('file-input').files[0];

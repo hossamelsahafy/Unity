@@ -180,7 +180,7 @@
                                 deleteButton.addEventListener('click', function() {
                                     deleteStory(i - start, stories_data[i].id) // Pass the index and the storyId
                                     .then(() => {
-                                        window.location.reload(true); // Refresh the page after deleting the story
+                                        window.location.reload(true);// Refresh the page after deleting the story
                                     });
                                 });
                                 
@@ -207,7 +207,13 @@
                                 });
                                 console.log('Delete response:', deleteResponse);
                                 if (!deleteResponse.ok) {
-                                    throw new Error(`Delete failed with status: ${deleteResponse.status}`);
+                                    if (deleteResponse.status === 403) {
+                                        throw new Error('User is not authorized to delete this story');
+                                    } else if (deleteResponse.status === 404) {
+                                        throw new Error('Story not found');
+                                    } else {
+                                        throw new Error(`Delete failed with status: ${deleteResponse.status}`);
+                                    }
                                 }
                                 console.log('Story deleted successfully, refreshing stories...');
                                 const storiesResponse = await fetch('/api/get-stories');
@@ -262,8 +268,8 @@
     
     <div class="button-container">
         <input id="post-content" name="post_content" placeholder="What's on your mind?" style="float: left; margin-right: 250px;">
-        <span><i class="uil uil-image" onclick="document.getElementById('file-input-post').click()" style="cursor: pointer;"></i></span>
-        <button type="submit" class="Post-button button button-pri" id="Post-button">Post</button>
+        <span><i class="uil uil-image" onclick="document.getElementById('file-input-post').click()" style="cursor: pointer; float: right; margin-left: 200px;"></i></span>
+        <button type="submit" class="Post-button button button-pri" id="Post-button" style="float: right; ">Post</button>
     </div>
     <!-- File input for image upload -->
     <input type="file" id="file-input-post" name="image_file" accept="image/*" style="display: none;">
@@ -298,11 +304,12 @@
             <p>{{ post.content }}</p>
         </div>
         {% endif %}
-        {% if post.image_path %}
-        <div class="PostImage">
-            <img src="{{ url_for('static', filename=post.image_path.replace('static/', '')) }}" alt="Post Image">
+        {% if post.image_url %}
+    <div class="PostImage">
+        <img src="{{ post.image_url }}" alt="Post Image">
     </div>
         {% endif %}
+        
 
         
         <div class="ActButtons">
@@ -512,7 +519,6 @@
 {% endfor %}
 {% for post in posts_data %}
     var postID = '{{ post.id }}';
-    console.log(postID);
 {% endfor %}
 </script>
     <script src="/static/script/home.js"></script>
