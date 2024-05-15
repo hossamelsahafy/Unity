@@ -6,11 +6,12 @@ import os
 from Create import db, Session, Images, edit_user_email, edit_user_name, edit_user_info, is_authorized_to_delete_story
 from werkzeug.utils import secure_filename
 import os
+from sqlalchemy.orm import scoped_session, sessionmaker
 from werkzeug.utils import secure_filename
 from werkzeug.exceptions import BadRequest
 import errno
 import re
-
+from Create import engine
 
 def save_image_file(image_file):
     # Define the correct path for saving images
@@ -25,7 +26,9 @@ def save_image_file(image_file):
 
 
 db = Session()
-
+db_session = scoped_session(sessionmaker(autocommit=False,
+                                         autoflush=False,
+                                         bind=engine))
 app = Flask(__name__)
 
 app.register_blueprint(User_app_views, url_prefix='/api/v1')
@@ -62,13 +65,18 @@ def submit_post():
         return jsonify({'error': 'User not authenticated'}), 401
 
     post_content = request.form.get('post_content')
-    image_file = request.files.get('image_file', None)
-    image_id = None
-    image_url = None
+    image_file = request.files.get('image_file', None)  # Image is optional
+
+    # Check if post content is present
+    if not post_content:
+        return jsonify({'error': 'Post content cannot be empty'}), 400
+
+    image_path = None
 
     # If an image file is provided and it's allowed
     if image_file and allowed_file(image_file.filename):
         if not is_filename_safe(image_file.filename):
+            # If the filename is not safe, return an error without reading the file
             return jsonify({'error': 'Filename is not safe. Please rename the file and try again.'}), 400
         
         # Check the file size
@@ -78,36 +86,27 @@ def submit_post():
         
         try:
             # Save the image file and get the path
-            image_path = save_image_file(image_file)
-            
-            # Calculate the image URL
-            image_url = url_for('static', filename=os.path.join('uploaded_images', image_file.filename))
-            
-            # Create a new image record in the database
-            new_image = Images(user_id=session['user_id'], image_path=image_path, image_url=image_url)
-            db_session.add(new_image)
-            db_session.commit()
-            
-            image_url = new_image.image_url
+            filename = secure_filename(image_file.filename)
+            image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            image_file.save(image_path)
+            print(f"Image saved at {image_path}")
         except Exception as e:
-            db_session.rollback()  # Rollback in case of error
+            print(f"Error saving image: {e}")
             return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
-        
-    # Check if either post content or image is provided
-    if not post_content and not image_url:
-        return jsonify({'error': 'Post must have either content or an image'}), 400
 
     try:
         # Create a new post with or without an image
-        new_post = Posts(UserID=session['user_id'], PostContent=post_content, Image_URL=image_url)  # Use correct column names
+        new_post = Posts(UserID=session['user_id'], PostContent=post_content, ImagePath=image_path)
         db_session.add(new_post)
         db_session.commit()
+        print(f"New post: {new_post}")  # Print out the new post
+
     
         return jsonify({'message': 'Post submitted successfully', 'post_id': new_post.PostID}), 200
     except Exception as e:
-        db_session.rollback()  # Rollback in case of error
-        return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
-
+        print(f"Error creating post: {e}")  # Print out any 
+        app.logger.error(f'An unexpected error occurred: {str(e)}')
+        return jsonify({'error': 'An unexpected error occurred'}), 500
 
 
 @app.route('/upload_image', methods=['POST'])
@@ -527,44 +526,38 @@ def home(profile_name):
     .outerjoin(Images, Stories.ImagePath == Images.image_id)\
     .join(Users, Stories.UserID == Users.userID)\
     .all()
-
+    db_session.close()
     # Construct a list of dictionaries with story content and image URLs
     stories_data = [{'id': story.StoryID, 'content': story.StoryContent, 
                      'image_url': image_url if image_url else avatar_image_url,
                      'avatar_image_url': avatar_image_url}  # Add this line
                     for story, image_url, avatar_image_url in stories_with_images]
-
+    
     # Get total number of stories for pagination
     total_stories_count = db_session.query(Stories).filter(Stories.UserID == user.userID).count()
     total_pages = (total_stories_count + 4) // 5  # Assuming 5 stories per page
-    # Fetch posts for the user
-    # Fetch posts and user information from the database
-    user_posts = db_session.query(
+    # Fetch posts and their images for the user
+    posts_with_images = db_session.query(
     Posts.PostID,
     Posts.UserID,
     Posts.PostContent,
-    Posts.ImageID,
-    Posts.Image_URL,  # Make sure this matches the attribute name in the class definition
+    Posts.ImagePath,  # Use the ImagePath from the Posts table
     Users.ProfileName,
     Users.avatar_image_url
-).join(Users, Posts.UserID == Users.userID).order_by(Posts.PostID.desc()).all()
+).join(Users, Posts.UserID == Users.userID)\
+.order_by(Posts.PostID.desc()).all()
 
-
-
-    # Construct a list of dictionaries with post details and user information
+# Construct a list of dictionaries with post details and user information
     posts_data = [{'id': post_id,
-               'content': post_content,
-               'image_url': image_url,
-               'user': {'ProfileName': profile_name, 'avatar_image_url': avatar_image_url}}
-              for post_id, user_id, post_content, image_id, image_url, profile_name, avatar_image_url in user_posts]
-
-
+    'content': post_content,
+    'image_url': url_for('static', filename=image_path.replace('static/', '')) if image_path else avatar_image_url,  # Generate the image URL using ImagePath
+    'user': {'ProfileName': profile_name, 'avatar_image_url': avatar_image_url}}
+    for post_id, user_id, post_content, image_path, profile_name, avatar_image_url in posts_with_images]
     # Fetch posts for the user
     posts = db_session.query(Posts).join(Users).order_by(Posts.PostID.desc()).all()
 
     return render_template('HomePage.html', user=user, avatar_image_url=avatar_image_url, 
-                           posts_data=posts_data, stories_data=stories_data, total_pages=total_pages, posts=posts)
-
+                       posts_data=posts_data, stories_data=stories_data, total_pages=total_pages, posts=posts)
 
 if __name__ == '__main__':
     app.run(debug=True)

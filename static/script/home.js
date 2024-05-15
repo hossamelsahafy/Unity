@@ -456,4 +456,37 @@ document.addEventListener("DOMContentLoaded", function() {
             feedbackElement.textContent = 'Error: ' + error.message;
         });
     }
+    function submitStoryForm() {
+        let storyContent = document.getElementById('story-content').value;
+        let imageFile = document.getElementById('file-input').files[0];
+        let formData = new FormData();
+        formData.append('story_content', storyContent);
+    
+        if (imageFile) {
+            formData.append('image_file', imageFile);
+        }
+    
+        fetch('/submit_story', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                console.error('Error submitting story:', data.error);
+                // Handle the error, e.g., display a message to the user
+            } else {
+                console.log('Story submitted successfully', data);
+                // Handle the success, e.g., clear the form, display a success message
+                window.location.reload(); // Reload the page
+            }
+        })
+        .catch(error => {
+            console.error('Error submitting story:', error);
+            // Handle the error, e.g., display a message to the user
+        });
+    
+        // Prevent the default form submission
+        return false;
+    }
     

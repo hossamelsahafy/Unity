@@ -61,15 +61,13 @@ class Posts(Base):
     PostID = Column("PostID", CHAR(36), primary_key=True, default=generate_uuid)
     UserID = Column("UserID", CHAR(36), ForeignKey('users.userID'))
     PostContent = Column("PostContent", VARCHAR(1024))
-    ImageID = Column("ImageID", CHAR(36), ForeignKey('images.image_id'), nullable=True)  # Assuming 'images' table has 'image_id' column
-    Image_URL = Column("Image_URL", VARCHAR(255), nullable=True)
+    ImagePath = Column("ImagePath", VARCHAR(255), nullable=True)
     user = relationship('Users', back_populates='posts')
 
-    def __init__(self, UserID, PostContent, ImageID=None, Image_URL=None):
+    def __init__(self, UserID, PostContent, ImagePath=None):
         self.UserID = UserID
         self.PostContent = PostContent
-        self.ImageID = ImageID
-        self.Image_URL = Image_URL
+        self.ImagePath = ImagePath
 
 class Likes(Base):
     __tablename__ = "likes"
